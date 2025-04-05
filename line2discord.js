@@ -265,8 +265,18 @@ app.use(express.json({
 // 静的ファイルの提供（注意: パスはプロジェクトのルートからの相対パス）
 app.use(express.static(path.join(__dirname, 'public')));
 // 念のため、images, filesディレクトリも明示的にマッピング
-app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
-app.use('/files', express.static(path.join(__dirname, 'public', 'files')));
+app.use('/images', express.static(path.join(__dirname, 'public', 'images'), {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'no-cache');
+  }
+}));
+app.use('/files', express.static(path.join(__dirname, 'public', 'files'), {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'no-cache');
+  }
+}));
 
 // 必要なディレクトリを作成
 const directories = [
@@ -382,6 +392,15 @@ app.get('/', (req, res) => {
           <li>連絡先共有情報の通知</li>
         </ul>
       </div>
+      
+      <div class="status">
+        <h2>システム情報</h2>
+        <p>🕒 サーバー時間: ${new Date().toLocaleString('ja-JP')}</p>
+        <p>🖥️ 環境: ${process.env.NODE_ENV || 'development'}</p>
+        <p>🖼️ 画像ディレクトリ: ${imageDir}</p>
+        <p>📁 ファイルディレクトリ: ${filesDir}</p>
+        <p>🔗 画像アクセスURL: ${process.env.BASE_URL || `http://${req.headers.host}`}/images/test.jpg</p>
+      </div>
     </body>
     </html>
   `);
@@ -391,26 +410,69 @@ app.get('/', (req, res) => {
 async function downloadFile(url, filePath, headers = {}) {
   try {
     console.log('🔄 ファイルダウンロード開始:', url);
-    // ディレクトリが存在しない場合は作成
+    
+    // ディレクトリが存在するか確認
     const dirname = path.dirname(filePath);
     if (!fs.existsSync(dirname)) {
+      console.log(`📁 ディレクトリを作成します: ${dirname}`);
       fs.mkdirSync(dirname, { recursive: true });
     }
+    
+    // ディレクトリの書き込み権限を確認
+    try {
+      const testFile = path.join(dirname, '.write_test');
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      console.log(`✅ ディレクトリ ${dirname} への書き込みテスト成功`);
+    } catch (permError) {
+      console.error(`❌ ディレクトリ ${dirname} への書き込み権限がありません:`, permError.message);
+      throw new Error(`ディレクトリ ${dirname} への書き込み権限がありません: ${permError.message}`);
+    }
 
+    // リクエストヘッダーを設定
     const defaultHeaders = {
       'Authorization': `Bearer ${config.line.channelAccessToken}`
     };
+    
+    const requestHeaders = { ...defaultHeaders, ...headers };
+    console.log('🔤 リクエストヘッダー:', Object.keys(requestHeaders).join(', '));
 
+    // ファイルをダウンロード
+    console.log('📥 ファイルをダウンロードします...');
     const response = await fetch(url, {
-      headers: { ...defaultHeaders, ...headers }
+      headers: requestHeaders
     });
 
+    // レスポンスを確認
+    console.log(`📡 サーバーレスポンス: ${response.status} ${response.statusText}`);
+    console.log('📋 レスポンスヘッダー:', Object.fromEntries([...response.headers.entries()]));
+    
     if (!response.ok) {
       throw new Error(`ファイルのダウンロードに失敗しました: ${response.status} ${response.statusText}`);
     }
 
-    const fileStream = fs.createWriteStream(filePath);
-    await finished(Readable.fromWeb(response.body).pipe(fileStream));
+    // レスポンスのコンテンツタイプを確認
+    const contentType = response.headers.get('content-type');
+    console.log('🔤 Content-Type:', contentType);
+    
+    // コンテンツタイプがapplication/jsonの場合はエラーレスポンスの可能性がある
+    if (contentType && contentType.includes('application/json')) {
+      const errorData = await response.json();
+      console.error('❌ APIエラーレスポンス:', errorData);
+      throw new Error(`API エラー: ${JSON.stringify(errorData)}`);
+    }
+    
+    // サイズを確認
+    const contentLength = response.headers.get('content-length');
+    console.log('📊 ファイルサイズ:', contentLength ? `${contentLength} バイト` : '不明');
+
+    // バッファとして読み込む
+    console.log('📂 ファイルを保存します...');
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    // ファイルに書き込み
+    fs.writeFileSync(filePath, buffer);
     
     // ファイルが正常に保存されたか確認
     if (fs.existsSync(filePath)) {
@@ -459,11 +521,48 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
     
     // LINE APIから画像をダウンロード
     const fileUrl = `https://api-data.line.me/v2/bot/message/${event.message.id}/content`;
+    console.log('🔄 LINE API URL:', fileUrl);
+    console.log('🔑 アクセストークン:', config.line.channelAccessToken ? `${config.line.channelAccessToken.substr(0, 5)}...` : '未設定');
+    
+    // 画像ダウンロードを試みる
     const success = await downloadFile(fileUrl, imagePath);
     
     if (!success) {
-      throw new Error('画像のダウンロードに失敗しました');
+      // 画像をダウンロードするための代替方法を試す
+      console.log('⚠️ 通常のダウンロード方法に失敗しました。代替方法を試みます...');
+      
+      try {
+        // 直接fetchを使用してダウンロード
+        const response = await fetch(fileUrl, {
+          headers: {
+            'Authorization': `Bearer ${config.line.channelAccessToken}`
+          }
+        });
+        
+        if (!response.ok) {
+          console.error(`❌ 画像ダウンロードエラー: HTTP ${response.status} - ${response.statusText}`);
+          throw new Error(`画像ダウンロードエラー: HTTP ${response.status}`);
+        }
+        
+        // レスポンスボディをバッファとして取得
+        const buffer = await response.arrayBuffer();
+        
+        // ファイルに書き込み
+        fs.writeFileSync(imagePath, Buffer.from(buffer));
+        console.log('✅ 代替方法による画像ダウンロード成功');
+      } catch (fetchError) {
+        console.error('❌ 代替ダウンロード方法でも失敗:', fetchError);
+        throw new Error(`画像のダウンロードに失敗しました: ${fetchError.message}`);
+      }
     }
+    
+    // ファイルが存在するか確認
+    if (!fs.existsSync(imagePath)) {
+      throw new Error('ファイルが保存されていません');
+    }
+    
+    const fileStats = fs.statSync(imagePath);
+    console.log(`📊 保存された画像ファイル: ${imagePath} (${fileStats.size} バイト)`);
     
     // 画像の公開URL
     // 注意: 相対パスは /images/ から始まる必要がある
@@ -474,6 +573,10 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
     try {
       const testResponse = await fetch(imageUrl, { method: 'HEAD' });
       console.log(`🔍 画像URLテスト: HTTP ${testResponse.status}`);
+      
+      if (!testResponse.ok) {
+        console.warn(`⚠️ 画像URLテスト失敗: HTTP ${testResponse.status}`);
+      }
     } catch (err) {
       console.log('⚠️ 画像URLのテストに失敗:', err.message);
     }
