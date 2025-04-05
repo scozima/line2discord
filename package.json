@@ -1,0 +1,33 @@
+{
+  "name": "line2discord",
+  "version": "1.0.0",
+  "description": "LINEとDiscordの連携ツール",
+  "main": "line2discord.js",
+  "scripts": {
+    "start": "node line2discord.js",
+    "dev": "nodemon line2discord.js",
+    "tunnel": "ngrok http 3000",
+    "dev:all": "concurrently --kill-others \"npm run tunnel\" \"sleep 5 && npm run dev\"",
+    "wait-tunnel": "sleep 5 && npm run dev"
+  },
+  "keywords": [
+    "line",
+    "discord",
+    "webhook",
+    "integration"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@line/bot-sdk": "^9.7.3",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.9"
+  }
+}

@@ -1,0 +1,33 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# LINE、Discord連携ツール
+
+## 概要
+- LINEグループのメッセージをDiscordで受信
+- DiscordからのメッセージをシームレスにLINEグループへ転送
+- メッセージ内容、画像、スタンプを高品質で表示
+- 送信時間やユーザー情報も適切に表示
+
+## デプロイ環境
+
+Renderを使用してデプロイする。Renderの利点：
+- 簡単なデプロイプロセス
+- GitHubリポジトリと連携可能
+- 無料枠が利用可能
+- HTTPSサポート標準装備
+- 自動ビルドとデプロイ機能
+
+# LINE Messaging API の設定
+LINE_CHANNEL_ID=2007209988
+LINE_CHANNEL_SECRET=20737b11023ab9a435528e72adc256e4
+LINE_CHANNEL_ACCESS_TOKEN=あなたのアクセストークンをここに入力
+
+# Discord Bot の設定
+DISCORD_BOT_TOKEN=あなたのDiscordボットトークンをここに入力
+DISCORD_CHANNEL_ID=メッセージを送信するDiscordチャンネルID
+
+# サーバー設定
+PORT=3000

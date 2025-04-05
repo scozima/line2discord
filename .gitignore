@@ -1,0 +1,22 @@
+# 依存関係
+node_modules/
+
+# 環境変数
+.env
+
+# ログファイル
+*.log
+npm-debug.log*
+
+# 一時ファイル
+.DS_Store
+.tmp
+.temp
+temp/
+tmp/
+
+# 画像
+public/images/
+
+# ngrok
+.ngrok/ 
