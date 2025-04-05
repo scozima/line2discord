@@ -10,6 +10,9 @@
     "dev:all": "concurrently --kill-others \"npm run tunnel\" \"sleep 5 && npm run dev\"",
     "wait-tunnel": "sleep 5 && npm run dev"
   },
+  "engines": {
+    "node": "18.x"
+  },
   "keywords": [
     "line",
     "discord",
