@@ -894,13 +894,23 @@ async function sendToDiscord(data) {
   }
 
   try {
+    // avatar_urlのデバッグ
+    console.log('🖼️ avatar_url詳細:', {
+      directAvatarUrl: data.avatar_url,
+      senderIconUrl: data.senderIconUrl,
+      fallbackUrl: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+    });
+    
     // LINEの日時フォーマットを変換
     const timestamp = data.timestamp ? new Date(parseInt(data.timestamp)).toISOString() : new Date().toISOString();
+    
+    // テスト用にハードコードされたアバターURL
+    const testAvatarUrl = 'https://cdn.discordapp.com/avatars/1234567890/abcdef1234567890.png';
     
     // Webhook用ペイロードを作成
     const payload = {
       username: data.username || '不明なユーザー',
-      avatar_url: data.avatar_url || data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png',
+      avatar_url: testAvatarUrl, // テストのためアバターURLを固定
     };
 
     // content（メッセージ本文）がある場合は追加
@@ -1018,6 +1028,8 @@ async function getLINEUserProfile(userId, groupId = null) {
       ? `https://api.line.me/v2/bot/group/${groupId}/member/${userId}` 
       : `https://api.line.me/v2/bot/profile/${userId}`;
     
+    console.log(`🔄 LINEプロフィール取得API呼び出し: ${endpoint}`);
+    
     const response = await fetch(endpoint, {
       method: 'GET',
       headers: {
@@ -1031,7 +1043,8 @@ async function getLINEUserProfile(userId, groupId = null) {
     }
 
     const profile = await response.json();
-    console.log('👤 取得したユーザープロフィール:', profile);
+    console.log('👤 取得したユーザープロフィール:', JSON.stringify(profile, null, 2));
+    console.log(`📸 プロフィール画像URL: ${profile.pictureUrl || 'なし'}`);
     return profile;
   } catch (error) {
     console.error('❌ ユーザープロフィール取得エラー:', error);
