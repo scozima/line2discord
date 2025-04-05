@@ -904,13 +904,10 @@ async function sendToDiscord(data) {
     // LINEの日時フォーマットを変換
     const timestamp = data.timestamp ? new Date(parseInt(data.timestamp)).toISOString() : new Date().toISOString();
     
-    // テスト用にハードコードされたアバターURL
-    const testAvatarUrl = 'https://cdn.discordapp.com/avatars/1234567890/abcdef1234567890.png';
-    
     // Webhook用ペイロードを作成
     const payload = {
       username: data.username || '不明なユーザー',
-      avatar_url: testAvatarUrl, // テストのためアバターURLを固定
+      avatar_url: data.avatar_url || data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png',
     };
 
     // content（メッセージ本文）がある場合は追加
@@ -1043,6 +1040,15 @@ async function getLINEUserProfile(userId, groupId = null) {
     }
 
     const profile = await response.json();
+    
+    // プロフィール画像URLがある場合、HTTPSに変換
+    if (profile.pictureUrl) {
+      // 画像URLをHTTPSに変換（必要であれば）
+      if (profile.pictureUrl.startsWith('http://')) {
+        profile.pictureUrl = profile.pictureUrl.replace('http://', 'https://');
+      }
+    }
+    
     console.log('👤 取得したユーザープロフィール:', JSON.stringify(profile, null, 2));
     console.log(`📸 プロフィール画像URL: ${profile.pictureUrl || 'なし'}`);
     return profile;
