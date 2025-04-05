@@ -584,8 +584,14 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
     // メッセージ共通設定（ユーザー名とアイコン）
     const messageConfig = {
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     };
+    
+    console.log('📤 画像メッセージ送信設定:', {
+      username: messageConfig.username,
+      avatar_url: messageConfig.avatar_url,
+      content: `${userProfile.displayName}さんが画像を送信しました:`
+    });
     
     // Discordに送信
     return sendToDiscord({
@@ -603,7 +609,7 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
     // メッセージ共通設定（ユーザー名とアイコン）
     const messageConfig = {
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     };
     
     // エラー時は通常のテキストメッセージだけ送信
@@ -648,7 +654,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
       return sendToDiscord({
         content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl
+        avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
       });
     }
     
@@ -659,7 +665,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     return sendToDiscord({
       content: `${userProfile.displayName}さんがファイルを送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   } catch (error) {
     console.error('❌ ファイルメッセージの処理中にエラーが発生しました:', error);
@@ -667,7 +673,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     return sendToDiscord({
       content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   }
 }
@@ -687,7 +693,7 @@ async function handleLocationMessage(event, sourceType, userId, groupId, roomId,
   // メッセージ共通設定（ユーザー名とアイコン）
   const messageConfig = {
     username: userProfile.displayName,
-    avatar_url: userProfile.pictureUrl
+    avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
   };
   
   // Discordに位置情報を送信
@@ -714,7 +720,7 @@ async function handleContactMessage(event, sourceType, userId, groupId, roomId, 
   // メッセージ共通設定（ユーザー名とアイコン）
   const messageConfig = {
     username: userProfile.displayName,
-    avatar_url: userProfile.pictureUrl
+    avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
   };
   
   // Discordに連絡先情報を送信
@@ -754,7 +760,7 @@ async function handleAudioMessage(event, sourceType, userId, groupId, roomId, us
       return sendToDiscord({
         content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl
+        avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
       });
     }
     
@@ -765,14 +771,14 @@ async function handleAudioMessage(event, sourceType, userId, groupId, roomId, us
     return sendToDiscord({
       content: `${userProfile.displayName}さんが音声メッセージを送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   } catch (error) {
     console.error('❌ 音声メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   }
 }
@@ -800,7 +806,7 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
       return sendToDiscord({
         content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl
+        avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
       });
     }
     
@@ -811,14 +817,14 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
     return sendToDiscord({
       content: `${userProfile.displayName}さんが動画を送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   } catch (error) {
     console.error('❌ 動画メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
   }
 }
@@ -831,13 +837,13 @@ async function handleStickerMessage(event, sourceType, userId, groupId, roomId, 
   const stickerPackageId = event.message.packageId;
   const stickerId = event.message.stickerId;
   
-  // LINE公式スタンプのURLを構築
+  // LINE公式スタンプのURLを構築（HTTPSで）
   const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/android/sticker.png`;
   
   // メッセージ共通設定（ユーザー名とアイコン）
   const messageConfig = {
     username: userProfile.displayName,
-    avatar_url: userProfile.pictureUrl
+    avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
   };
   
   try {
@@ -898,8 +904,16 @@ async function sendToDiscord(data) {
     console.log('🖼️ avatar_url詳細:', {
       directAvatarUrl: data.avatar_url,
       senderIconUrl: data.senderIconUrl,
-      fallbackUrl: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+      fallbackUrl: 'https://cdn.discordapp.com/embed/avatars/0.png'
     });
+    
+    // アバターURLが存在し、有効なURLかチェック
+    let avatarUrl = data.avatar_url || data.senderIconUrl || 'https://cdn.discordapp.com/embed/avatars/0.png';
+    // URLが有効な形式かチェック（簡易的な検証）
+    if (!avatarUrl.startsWith('http')) {
+      console.log('⚠️ 無効なavatar_url形式、デフォルトに置き換えます:', avatarUrl);
+      avatarUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
+    }
     
     // LINEの日時フォーマットを変換
     const timestamp = data.timestamp ? new Date(parseInt(data.timestamp)).toISOString() : new Date().toISOString();
@@ -907,7 +921,7 @@ async function sendToDiscord(data) {
     // Webhook用ペイロードを作成
     const payload = {
       username: data.username || '不明なユーザー',
-      avatar_url: data.avatar_url || data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png',
+      avatar_url: avatarUrl,
     };
 
     // content（メッセージ本文）がある場合は追加
@@ -1041,12 +1055,14 @@ async function getLINEUserProfile(userId, groupId = null) {
 
     const profile = await response.json();
     
+    // プロフィール画像URLがない場合はデフォルト値を設定
+    if (!profile.pictureUrl) {
+      console.log('⚠️ プロフィール画像URLが取得できませんでした。デフォルト値を使用します。');
+      profile.pictureUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
+    }
     // プロフィール画像URLがある場合、HTTPSに変換
-    if (profile.pictureUrl) {
-      // 画像URLをHTTPSに変換（必要であれば）
-      if (profile.pictureUrl.startsWith('http://')) {
-        profile.pictureUrl = profile.pictureUrl.replace('http://', 'https://');
-      }
+    else if (profile.pictureUrl.startsWith('http://')) {
+      profile.pictureUrl = profile.pictureUrl.replace('http://', 'https://');
     }
     
     console.log('👤 取得したユーザープロフィール:', JSON.stringify(profile, null, 2));
@@ -1090,7 +1106,7 @@ app.post(config.line.webhookPath, async (req, res) => {
       if (!userProfile) {
         userProfile = {
           displayName: userId ? `LINEユーザー ${userId.substr(-4)}` : 'LINEユーザー',
-          pictureUrl: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+          pictureUrl: 'https://cdn.discordapp.com/embed/avatars/0.png'
         };
         console.log('⚠️ ユーザープロファイル取得に失敗したため、デフォルト値を使用します');
       }
@@ -1098,7 +1114,7 @@ app.post(config.line.webhookPath, async (req, res) => {
       // メッセージ共通設定（ユーザー名とアイコン）
       const messageConfig = {
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl
+        avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
       };
       
       if (event.type === 'message') {
@@ -1167,7 +1183,7 @@ app.post(config.line.webhookPath, async (req, res) => {
         await sendToDiscord({
           content: `${userProfile.displayName}さんがLINE Botを友達追加しました！`,
           username: "LINE通知",
-          avatar_url: userProfile.pictureUrl
+          avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
         });
       } else if (event.type === 'join') {
         // グループ参加イベント
@@ -1175,7 +1191,7 @@ app.post(config.line.webhookPath, async (req, res) => {
         await sendToDiscord({
           content: "LINE Botがグループに参加しました！このグループのメッセージがDiscordに転送されます。",
           username: "LINE通知",
-          avatar_url: "https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png"
+          avatar_url: "https://cdn.discordapp.com/embed/avatars/0.png"
         });
       } else {
         console.log(`⏭️ メッセージ以外のイベント: ${event.type}`);
@@ -1245,7 +1261,7 @@ async function handleTextMessage(event, sourceType, userId, groupId, roomId, use
   // メッセージ共通設定（ユーザー名とアイコン）
   const messageConfig = {
     username: userProfile.displayName,
-    avatar_url: userProfile.pictureUrl
+    avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
   };
   
   // Discordにテキストメッセージを送信
