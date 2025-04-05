@@ -272,6 +272,10 @@ const directories = [
   path.join(__dirname, 'public', 'files')
 ];
 
+// ディレクトリパスを定義
+const imageDir = path.join(__dirname, 'public', 'images');
+const filesDir = path.join(__dirname, 'public', 'files');
+
 directories.forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -380,38 +384,41 @@ app.get('/', (req, res) => {
   `);
 });
 
-// 画像ダウンロード＆保存関数
-async function downloadImage(url, filePath, headers = {}) {
-  console.log('🔄 画像ダウンロード開始:', url);
+// ファイル（PDF、音声、動画など）をダウンロードする共通関数
+async function downloadFile(url, filePath, headers = {}) {
   try {
-    const response = await fetch(url, { headers });
-    if (!response.ok) {
-      throw new Error(`画像ダウンロードエラー: ${response.status} ${response.statusText}`);
+    console.log('🔄 ファイルダウンロード開始:', url);
+    // ディレクトリが存在しない場合は作成
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
     }
 
-    // ダウンロードしたデータをバッファとして取得
-    const buffer = await response.arrayBuffer();
-    
-    // ディレクトリが存在するか確認
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      console.log(`📁 ディレクトリを作成します: ${dir}`);
-      fs.mkdirSync(dir, { recursive: true });
+    const defaultHeaders = {
+      'Authorization': `Bearer ${config.line.channelAccessToken}`
+    };
+
+    const response = await fetch(url, {
+      headers: { ...defaultHeaders, ...headers }
+    });
+
+    if (!response.ok) {
+      throw new Error(`ファイルのダウンロードに失敗しました: ${response.status} ${response.statusText}`);
     }
-    
-    // バッファをファイルに書き込み
-    fs.writeFileSync(filePath, Buffer.from(buffer));
+
+    const fileStream = fs.createWriteStream(filePath);
+    await finished(Readable.fromWeb(response.body).pipe(fileStream));
     
     // ファイルが正常に保存されたか確認
     if (fs.existsSync(filePath)) {
       const stats = fs.statSync(filePath);
-      console.log(`✅ 画像を保存しました: ${filePath} (サイズ: ${stats.size} バイト)`);
+      console.log(`✅ ファイルを保存しました: ${filePath} (サイズ: ${stats.size} バイト)`);
       return true;
     } else {
       throw new Error('ファイルの保存に失敗しました');
     }
   } catch (error) {
-    console.error('❌ 画像ダウンロードに失敗:', error);
+    console.error('❌ ファイルのダウンロード中にエラーが発生しました:', error);
     return false;
   }
 }
@@ -446,110 +453,44 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
   console.log(`📸 ${sourceType}から画像を受信: メッセージID ${event.message.id}`);
   
   try {
-    // 現在のベースURLを取得（コンソールにも出力）
-    const currentBaseUrl = process.env.BASE_URL || `http://${req.headers.host}`;
-    console.log('🔗 現在のベースURL:', currentBaseUrl);
-    
     // 一意のファイル名を生成
     const imageFileName = getSafeFileName(event.message.id);
     const imagePath = path.join(imageDir, imageFileName);
-    // 修正: 両方のパスを用意（二重アクセス用）
-    const imageRelativePath = `/public/images/${imageFileName}`;
-    const imageDirectPath = `/images/${imageFileName}`;
     
     console.log('📂 画像保存先パス:', imagePath);
-    console.log('🔗 画像相対パス (public):', imageRelativePath);
-    console.log('🔗 画像相対パス (direct):', imageDirectPath);
     
     // LINE APIから画像をダウンロード（認証ヘッダー付き）
-    const downloadSuccess = await downloadImage(
-      `https://api-data.line.me/v2/bot/message/${event.message.id}/content`,
-      imagePath,
-      { 'Authorization': `Bearer ${config.line.channelAccessToken}` }
-    );
+    const fileUrl = `https://api-data.line.me/v2/bot/message/${event.message.id}/content`;
+    const downloaded = await downloadFile(fileUrl, imagePath);
     
-    if (!downloadSuccess) {
+    if (!downloaded) {
       throw new Error('画像のダウンロードに失敗しました');
     }
     
-    // 画像の公開URL（デバッグ出力を追加）
-    // 修正: 代替URLを用意
-    let imageUrl = `${currentBaseUrl}${imageDirectPath}`;
-    const backupImageUrl = `${currentBaseUrl}${imageRelativePath}`;
-    console.log('🔗 画像の公開URL (primary):', imageUrl);
-    console.log('🔗 画像の公開URL (backup):', backupImageUrl);
+    // 画像の公開URL
+    const imageUrl = getPublicUrl(req, `/images/${imageFileName}`);
+    console.log('🔗 画像の公開URL:', imageUrl);
     
-    // 画像にアクセスできるか確認
-    try {
-      const imageCheckResponse = await fetch(imageUrl, { method: 'HEAD' });
-      console.log(`🔍 画像URLチェック結果: ${imageCheckResponse.status} ${imageCheckResponse.statusText}`);
-      if (!imageCheckResponse.ok) {
-        console.warn('⚠️ 画像直接URLへのアクセスに失敗しました。バックアップURLを使用します。');
-        // バックアップURLを使用
-        imageUrl = backupImageUrl;
-      }
-    } catch (checkErr) {
-      console.warn('⚠️ 画像URLチェック中にエラー:', checkErr.message);
-    }
-    
-    // Discordに画像埋め込みメッセージを送信
-    const result = await sendToDiscord({
-      text: "【画像が送信されました】",
-      username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
-      timestamp: event.timestamp,
-      groupName: sourceType === 'user' 
-        ? 'LINE個人チャット' 
-        : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
-      senderName: userProfile?.displayName || null,
-      senderIconUrl: userProfile?.pictureUrl || null,
-      imageUrl: imageUrl
+    // Discordに送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが画像を送信しました:`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl,
+      embeds: [{
+        image: {
+          url: imageUrl
+        }
+      }]
     });
-    
-    console.log(`Discord送信結果(画像付き): ${result ? '成功' : '失敗'}`);
   } catch (err) {
     console.error('❌ 画像処理中にエラーが発生:', err);
     
     // エラー時は通常のテキストメッセージだけ送信
     await sendToDiscord({
-      text: `【画像が送信されましたが、転送に失敗しました】\nエラー: ${err.message}`,
-      username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
-      timestamp: event.timestamp,
-      groupName: sourceType === 'user' 
-        ? 'LINE個人チャット' 
-        : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
-      senderName: userProfile?.displayName || null,
-      senderIconUrl: userProfile?.pictureUrl || null
+      content: `${userProfile.displayName}さんが画像を送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl
     });
-  }
-}
-
-// ファイル（PDF、音声、動画など）をダウンロードする関数
-async function downloadFile(url, filePath, headers = {}) {
-  try {
-    // ディレクトリが存在しない場合は作成
-    const dirname = path.dirname(filePath);
-    if (!fs.existsSync(dirname)) {
-      fs.mkdirSync(dirname, { recursive: true });
-    }
-
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${config.line.channelAccessToken}`,
-        ...headers
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`ファイルのダウンロードに失敗しました: ${response.status} ${response.statusText}`);
-    }
-
-    const fileStream = fs.createWriteStream(filePath);
-    await finished(Readable.fromWeb(response.body).pipe(fileStream));
-    console.log(`✅ ファイルを保存しました: ${filePath}`);
-    return true;
-  } catch (error) {
-    console.error('❌ ファイルのダウンロード中にエラーが発生しました:', error);
-    return false;
   }
 }
 
@@ -613,28 +554,34 @@ async function handleLocationMessage(event, sourceType, userId, groupId, roomId,
     
     // Google Mapsへのリンクを作成
     const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.latitude},${location.longitude}`)}`;
+    const googleMapsStaticUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&zoom=15&size=600x300&maptype=roadmap&markers=color:red%7C${location.latitude},${location.longitude}`;
     
     // Discordに送信
     return sendToDiscord({
+      content: `${userProfile.displayName}さんが位置情報を共有しました:`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl,
       embeds: [{
         title: location.title || '位置情報',
         description: location.address || '住所情報なし',
+        url: googleMapsUrl,
         fields: [
           { name: '緯度', value: `${location.latitude}`, inline: true },
-          { name: '経度', value: `${location.longitude}`, inline: true },
-          { name: 'Google Maps', value: `[地図を開く](${googleMapsUrl})` }
+          { name: '経度', value: `${location.longitude}`, inline: true }
         ],
-        color: 0x3498db // 青色
-      }],
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+        color: 0x3498db, // 青色
+        footer: {
+          text: 'Google Mapsで開く',
+          icon_url: 'https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2.png'
+        }
+      }]
     });
   } catch (error) {
     console.error('❌ 位置情報メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが位置情報を送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   }
 }
@@ -643,19 +590,34 @@ async function handleLocationMessage(event, sourceType, userId, groupId, roomId,
 async function handleContactMessage(event, sourceType, userId, groupId, roomId, userProfile) {
   try {
     console.log('👤 連絡先情報メッセージを処理中...');
+    const contact = event.message;
     
-    // LINEはContact共有のAPIが限定的なため、テキストで情報を送信
+    // 連絡先情報を取得（可能な限り）
+    let contactDetails = '';
+    if (contact.displayName) {
+      contactDetails += `名前: ${contact.displayName}\n`;
+    }
+    
+    // Discordに送信
     return sendToDiscord({
-      content: `${userProfile.displayName}さんが連絡先情報を共有しました（LINEアプリで確認してください）`,
+      content: `${userProfile.displayName}さんが連絡先情報を共有しました`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl,
+      embeds: [{
+        title: '連絡先情報',
+        description: contactDetails || 'LINEでの連絡先共有です（詳細はLINEアプリで確認してください）',
+        color: 0x00b900, // LINE緑
+        thumbnail: {
+          url: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+        }
+      }]
     });
   } catch (error) {
     console.error('❌ 連絡先情報メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが連絡先情報を共有しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   }
 }
@@ -805,8 +767,23 @@ async function sendToDiscord(data) {
     // Webhook用ペイロードを作成
     const payload = {
       username: data.username || '不明なユーザー',
-      avatar_url: data.iconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png',
-      embeds: [
+      avatar_url: data.avatar_url || data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png',
+    };
+
+    // content（メッセージ本文）がある場合は追加
+    if (data.content) {
+      payload.content = data.content;
+    } else if (data.text) {
+      payload.content = data.text;
+    }
+
+    // 埋め込み設定
+    if (data.embeds) {
+      // 直接埋め込み配列が指定されている場合はそれを使用
+      payload.embeds = data.embeds;
+    } else {
+      // 古い形式の場合は変換
+      payload.embeds = [
         {
           title: data.groupName || 'LINE',
           color: 5301186, // LINE緑色
@@ -817,25 +794,22 @@ async function sendToDiscord(data) {
             icon_url: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
           }
         }
-      ]
-    };
+      ];
 
-    // 画像情報がある場合、埋め込みに追加
-    if (data.imageUrl) {
-      payload.embeds[0].image = {
-        url: data.imageUrl
-      };
-      
-      // 直接URLをメッセージ本文にも追加（埋め込みがうまくいかない場合の対策）
-      payload.content = `${data.imageUrl}`;
-    }
+      // 画像情報がある場合、埋め込みに追加
+      if (data.imageUrl) {
+        payload.embeds[0].image = {
+          url: data.imageUrl
+        };
+      }
 
-    // 送信者情報（アイコンと名前）がある場合、埋め込みに追加
-    if (data.senderName || data.senderIconUrl) {
-      payload.embeds[0].author = {
-        name: data.senderName || '不明なユーザー',
-        icon_url: data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
-      };
+      // 送信者情報（アイコンと名前）がある場合、埋め込みに追加
+      if (data.senderName || data.senderIconUrl) {
+        payload.embeds[0].author = {
+          name: data.senderName || '不明なユーザー',
+          icon_url: data.senderIconUrl || 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+        };
+      }
     }
 
     // メッセージの出力（デバッグ用）
