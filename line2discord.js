@@ -581,25 +581,35 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
       console.log('⚠️ 画像URLのテストに失敗:', err.message);
     }
     
+    // メッセージ共通設定（ユーザー名とアイコン）
+    const messageConfig = {
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl
+    };
+    
     // Discordに送信
     return sendToDiscord({
       content: `${userProfile.displayName}さんが画像を送信しました:`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl,
       embeds: [{
         image: {
           url: imageUrl
         }
-      }]
+      }],
+      ...messageConfig
     });
   } catch (err) {
     console.error('❌ 画像処理中にエラーが発生:', err);
     
+    // メッセージ共通設定（ユーザー名とアイコン）
+    const messageConfig = {
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl
+    };
+    
     // エラー時は通常のテキストメッセージだけ送信
     await sendToDiscord({
       content: `${userProfile.displayName}さんが画像を送信しました（LINEアプリで確認してください）\nエラー: ${err.message}`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      ...messageConfig
     });
   }
 }
@@ -662,80 +672,63 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
   }
 }
 
-// 位置情報メッセージ処理関数
+// 位置情報メッセージを処理
 async function handleLocationMessage(event, sourceType, userId, groupId, roomId, userProfile) {
-  try {
-    console.log('🗺️ 位置情報メッセージを処理中...');
-    const location = event.message;
-    
-    // Google Mapsへのリンクを作成
-    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.latitude},${location.longitude}`)}`;
-    const googleMapsStaticUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${location.latitude},${location.longitude}&zoom=15&size=600x300&maptype=roadmap&markers=color:red%7C${location.latitude},${location.longitude}`;
-    
-    // Discordに送信
-    return sendToDiscord({
-      content: `${userProfile.displayName}さんが位置情報を共有しました:`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl,
-      embeds: [{
-        title: location.title || '位置情報',
-        description: location.address || '住所情報なし',
-        url: googleMapsUrl,
-        fields: [
-          { name: '緯度', value: `${location.latitude}`, inline: true },
-          { name: '経度', value: `${location.longitude}`, inline: true }
-        ],
-        color: 0x3498db, // 青色
-        footer: {
-          text: 'Google Mapsで開く',
-          icon_url: 'https://maps.gstatic.com/mapfiles/api-3/images/spotlight-poi2.png'
-        }
-      }]
-    });
-  } catch (error) {
-    console.error('❌ 位置情報メッセージの処理中にエラーが発生しました:', error);
-    return sendToDiscord({
-      content: `${userProfile.displayName}さんが位置情報を送信しました（LINEアプリで確認してください）`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
-    });
-  }
+  console.log(`📍 ${sourceType}から位置情報を受信: ${event.message.address || '位置情報'}`);
+  
+  const latitude = event.message.latitude;
+  const longitude = event.message.longitude;
+  const address = event.message.address || '住所なし';
+  const title = event.message.title || '共有された位置情報';
+  
+  // Google Maps URL
+  const googleMapsUrl = `https://maps.google.com/maps?q=${latitude},${longitude}`;
+  
+  // メッセージ共通設定（ユーザー名とアイコン）
+  const messageConfig = {
+    username: userProfile.displayName,
+    avatar_url: userProfile.pictureUrl
+  };
+  
+  // Discordに位置情報を送信
+  await sendToDiscord({
+    content: `${userProfile.displayName}さんが位置情報を共有しました:`,
+    embeds: [{
+      title: title,
+      description: `📍 住所: ${address}\n🔗 [Google Mapsで開く](${googleMapsUrl})`,
+      footer: {
+        text: `緯度: ${latitude}, 経度: ${longitude}`
+      }
+    }],
+    ...messageConfig
+  });
 }
 
 // 連絡先情報メッセージ処理関数
 async function handleContactMessage(event, sourceType, userId, groupId, roomId, userProfile) {
-  try {
-    console.log('👤 連絡先情報メッセージを処理中...');
-    const contact = event.message;
-    
-    // 連絡先情報を取得（可能な限り）
-    let contactDetails = '';
-    if (contact.displayName) {
-      contactDetails += `名前: ${contact.displayName}\n`;
-    }
-    
-    // Discordに送信
-    return sendToDiscord({
-      content: `${userProfile.displayName}さんが連絡先情報を共有しました`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl,
-      embeds: [{
-        title: '連絡先情報',
-        description: contactDetails || 'LINEでの連絡先共有です（詳細はLINEアプリで確認してください）',
-        color: 0x00b900, // LINE緑
-        thumbnail: {
-          url: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
-        }
-      }]
-    });
-  } catch (error) {
-    console.error('❌ 連絡先情報メッセージの処理中にエラーが発生しました:', error);
-    return sendToDiscord({
-      content: `${userProfile.displayName}さんが連絡先情報を共有しました（LINEアプリで確認してください）`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
-    });
-  }
+  console.log(`👤 ${sourceType}から連絡先を受信`);
+
+  // 連絡先情報を取得
+  const contact = event.message;
+  
+  // メッセージ共通設定（ユーザー名とアイコン）
+  const messageConfig = {
+    username: userProfile.displayName,
+    avatar_url: userProfile.pictureUrl
+  };
+  
+  // Discordに連絡先情報を送信
+  await sendToDiscord({
+    content: `${userProfile.displayName}さんが連絡先を共有しました:`,
+    embeds: [{
+      title: contact.displayName || '連絡先',
+      description: '連絡先情報が共有されました',
+      fields: [
+        { name: '表示名', value: contact.displayName || '不明', inline: true }
+      ]
+    }],
+    ...messageConfig
+  });
 }
 
 // オーディオメッセージ処理関数
@@ -832,22 +825,34 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
 
 // スタンプメッセージを処理
 async function handleStickerMessage(event, sourceType, userId, groupId, roomId, userProfile) {
-  console.log(`📱 ${sourceType}からスタンプを受信:`, event.message);
+  console.log(`🎭 ${sourceType}からスタンプを受信: ${event.message.stickerId}`);
+  
+  // スタンプの情報を取得
+  const stickerPackageId = event.message.packageId;
+  const stickerId = event.message.stickerId;
+  
+  // LINE公式スタンプのURLを構築
+  const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${stickerId}/android/sticker.png`;
+  
+  // メッセージ共通設定（ユーザー名とアイコン）
+  const messageConfig = {
+    username: userProfile.displayName,
+    avatar_url: userProfile.pictureUrl
+  };
   
   try {
-    // LINE公式スタンプのURLを構築
-    const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${event.message.stickerId}/android/sticker.png`;
-    
-    // Discordに送信
-    return sendToDiscord({
+    // Discordにスタンプメッセージを送信
+    await sendToDiscord({
       content: `${userProfile.displayName}さんがスタンプを送信しました:`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl,
       embeds: [{
         image: {
           url: stickerUrl
+        },
+        footer: {
+          text: `パッケージID: ${stickerPackageId} / スタンプID: ${stickerId}`
         }
-      }]
+      }],
+      ...messageConfig
     });
   } catch (err) {
     console.error('❌ スタンプ処理中にエラーが発生:', err);
@@ -855,8 +860,7 @@ async function handleStickerMessage(event, sourceType, userId, groupId, roomId, 
     // エラー時は通常のテキストメッセージだけ送信
     await sendToDiscord({
       content: `${userProfile.displayName}さんがスタンプを送信しました（LINEアプリで確認してください）`,
-      username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl
+      ...messageConfig
     });
   }
 }
@@ -1072,16 +1076,18 @@ app.post(config.line.webhookPath, async (req, res) => {
         console.log('⚠️ ユーザープロファイル取得に失敗したため、デフォルト値を使用します');
       }
       
+      // メッセージ共通設定（ユーザー名とアイコン）
+      const messageConfig = {
+        username: userProfile.displayName,
+        avatar_url: userProfile.pictureUrl
+      };
+      
       if (event.type === 'message') {
         console.log(`📝 メッセージタイプ: ${event.message.type}`);
         
         switch (event.message.type) {
           case 'text':
-            await sendToDiscord({
-              content: event.message.text,
-              username: userProfile.displayName,
-              avatar_url: userProfile.pictureUrl
-            });
+            await handleTextMessage(event, sourceType, userId, groupId, roomId, userProfile);
             break;
             
           case 'image':
@@ -1112,12 +1118,28 @@ app.post(config.line.webhookPath, async (req, res) => {
             await handleContactMessage(event, sourceType, userId, groupId, roomId, userProfile);
             break;
             
-          default:
-            console.log(`🤷‍♂️ 未対応のメッセージタイプ: ${event.message.type}`);
+          case 'unfollow':
             await sendToDiscord({
-              content: `${userProfile.displayName}さんが「${event.message.type}」タイプのメッセージを送信しました（LINEアプリで確認してください）`,
-              username: userProfile.displayName,
-              avatar_url: userProfile.pictureUrl
+              content: '😢 ユーザーにブロックされました',
+              username: 'LINE Bot',
+              avatar_url: 'https://cdn.icon-icons.com/icons2/2148/PNG/512/line_icon_132300.png'
+            });
+            break;
+            
+          case 'leave':
+            await sendToDiscord({
+              content: `😢 LINEボットが${sourceType === 'group' ? 'グループ' : 'ルーム'}から削除されました`,
+              username: 'LINE Bot',
+              avatar_url: 'https://cdn.icon-icons.com/icons2/2148/PNG/512/line_icon_132300.png'
+            });
+            break;
+            
+          default:
+            console.log(`⚠️ サポートされていないイベントタイプ: ${event.type}`);
+            await sendToDiscord({
+              content: `未サポートのLINEイベントを受信しました: ${event.type}`,
+              username: 'LINE Bot',
+              avatar_url: 'https://cdn.icon-icons.com/icons2/2148/PNG/512/line_icon_132300.png'
             });
         }
       } else if (event.type === 'follow') {
@@ -1196,6 +1218,23 @@ app.get(config.line.webhookPath, (req, res) => {
     </html>
   `);
 });
+
+// テキストメッセージを処理
+async function handleTextMessage(event, sourceType, userId, groupId, roomId, userProfile) {
+  console.log(`💬 ${sourceType}からテキストメッセージを受信: ${event.message.text}`);
+  
+  // メッセージ共通設定（ユーザー名とアイコン）
+  const messageConfig = {
+    username: userProfile.displayName,
+    avatar_url: userProfile.pictureUrl
+  };
+  
+  // Discordにテキストメッセージを送信
+  await sendToDiscord({
+    content: event.message.text,
+    ...messageConfig
+  });
+}
 
 // サーバー起動
 app.listen(config.port, async () => {
