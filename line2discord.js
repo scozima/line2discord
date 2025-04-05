@@ -255,78 +255,130 @@ let ngrokPublicUrl = null;
 // Expressサーバーの初期化
 const app = express();
 
-// 静的ファイル提供用のディレクトリを設定
-// 絶対パスを使用して明示的に設定
-const publicDir = path.join(__dirname, 'public');
-console.log('📁 静的ファイル配信ディレクトリ:', publicDir);
-app.use('/public', express.static(publicDir));
-// 追加: 直接ルートパスにもマウントして冗長性を確保
-app.use(express.static(publicDir));
-
-// 生のリクエストデータを取得するためのミドルウェア
+// リクエストのボディパーサー設定（シグネチャ検証用に生のボディを保持）
 app.use(express.json({
-  verify: (req, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req, res, buf, encoding) => {
+    req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
 
-// 生のテキストを取得するためのミドルウェア
-app.use(express.text({
-  type: '*/*',
-  verify: (req, res, buf) => {
-    if (!req.rawBody) {
-      req.rawBody = buf.toString();
-    }
-  }
-}));
+// 静的ファイルの提供
+app.use(express.static('public'));
 
-// rawBodyを確保するためのミドルウェア
-app.use((req, res, next) => {
-  const chunks = [];
-  
-  // リクエストデータを保存
-  req.on('data', (chunk) => {
-    chunks.push(chunk);
-  });
-  
-  // リクエスト完了時にrawBodyを設定
-  req.on('end', () => {
-    if (!req.rawBody) {
-      const buffer = Buffer.concat(chunks);
-      req.rawBody = buffer.toString();
-      
-      try {
-        if (!req.body || Object.keys(req.body).length === 0) {
-          req.body = JSON.parse(req.rawBody);
+// 必要なディレクトリを作成
+const directories = [
+  path.join(__dirname, 'public'),
+  path.join(__dirname, 'public', 'images'),
+  path.join(__dirname, 'public', 'files')
+];
+
+directories.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`📁 ディレクトリを作成しました: ${dir}`);
+  }
+});
+
+// ルートURLへのアクセスを処理
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>LINE-Discord連携サーバー</title>
+      <style>
+        body {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f5f5f5;
         }
-      } catch (e) {
-        console.log('⚠️ ボディのJSONパースに失敗:', e.message);
-      }
-    }
-    next();
-  });
-  
-  // リクエスト処理の継続
-  if (req.rawBody) {
-    next();
-  }
+        h1 {
+          color: #00B900;
+          border-bottom: 2px solid #00B900;
+          padding-bottom: 10px;
+        }
+        .status {
+          background-color: #fff;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px 0;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .webhook-url {
+          background-color: #f0f0f0;
+          padding: 10px;
+          border-radius: 4px;
+          font-family: monospace;
+          word-break: break-all;
+        }
+        .discord-link {
+          display: inline-block;
+          margin-top: 20px;
+          background-color: #5865F2;
+          color: white;
+          padding: 10px 15px;
+          text-decoration: none;
+          border-radius: 4px;
+        }
+        .line-link {
+          display: inline-block;
+          margin-top: 20px;
+          background-color: #00B900;
+          color: white;
+          padding: 10px 15px;
+          text-decoration: none;
+          border-radius: 4px;
+        }
+        .feature-list {
+          background-color: #fff;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px 0;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .feature-list h2 {
+          color: #5865F2;
+          border-bottom: 1px solid #5865F2;
+          padding-bottom: 5px;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>LINE-Discord連携サーバー</h1>
+      <div class="status">
+        <p>⚡ ステータス: <strong>稼働中</strong></p>
+        <p>🕒 起動時間: ${new Date().toLocaleString('ja-JP')}</p>
+        <p>🔗 Webhook URL:</p>
+        <div class="webhook-url">${process.env.LINE_WEBHOOK_URL || `${process.env.BASE_URL || 'http://localhost:' + config.port}${config.line.webhookPath}`}</div>
+        <p>💡 このURLをLINE DeveloperコンソールのWebhook URLに設定してください。</p>
+        <div>
+          <a href="https://developers.line.biz/console/" target="_blank" class="line-link">LINE Developerコンソールを開く</a>
+          <a href="${process.env.DISCORD_WEBHOOK_URL || '#'}" target="_blank" class="discord-link">Discord Webhookを確認</a>
+        </div>
+      </div>
+      
+      <div class="feature-list">
+        <h2>対応機能一覧</h2>
+        <ul>
+          <li>テキストメッセージの転送</li>
+          <li>画像の転送・表示</li>
+          <li>PDFなどのファイル転送</li>
+          <li>動画・音声メッセージの転送</li>
+          <li>位置情報の転送 (Google Maps連携)</li>
+          <li>スタンプの表示</li>
+          <li>連絡先共有情報の通知</li>
+        </ul>
+      </div>
+    </body>
+    </html>
+  `);
 });
-
-// ngrok警告をスキップするヘッダーを追加するミドルウェア
-app.use((req, res, next) => {
-  // ngrokのブラウザ警告ページをスキップするためのヘッダーを設定
-  res.setHeader('ngrok-skip-browser-warning', '1');
-  next();
-});
-
-// 画像とファイル保存のための準備
-const imageDir = path.join(__dirname, 'public', 'images');
-if (!fs.existsSync(imageDir)) {
-  fs.mkdirSync(imageDir, { recursive: true });
-  console.log('📁 画像用ディレクトリを作成しました:', imageDir);
-} else {
-  console.log('📁 既存の画像ディレクトリを使用します:', imageDir);
-}
 
 // 画像ダウンロード＆保存関数
 async function downloadImage(url, filePath, headers = {}) {
@@ -471,81 +523,252 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
   }
 }
 
-// ルートURLへのアクセスを処理
-app.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>LINE-Discord連携サーバー</title>
-      <style>
-        body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 800px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        h1 {
-          color: #00B900;
-          border-bottom: 2px solid #00B900;
-          padding-bottom: 10px;
-        }
-        .status {
-          background-color: #fff;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 20px 0;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .webhook-url {
-          background-color: #f0f0f0;
-          padding: 10px;
-          border-radius: 4px;
-          font-family: monospace;
-          word-break: break-all;
-        }
-        .discord-link {
-          display: inline-block;
-          margin-top: 20px;
-          background-color: #5865F2;
-          color: white;
-          padding: 10px 15px;
-          text-decoration: none;
-          border-radius: 4px;
-        }
-        .line-link {
-          display: inline-block;
-          margin-top: 20px;
-          background-color: #00B900;
-          color: white;
-          padding: 10px 15px;
-          text-decoration: none;
-          border-radius: 4px;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>LINE-Discord連携サーバー</h1>
-      <div class="status">
-        <p>⚡ ステータス: <strong>稼働中</strong></p>
-        <p>🕒 起動時間: ${new Date().toLocaleString('ja-JP')}</p>
-        <p>🔗 Webhook URL:</p>
-        <div class="webhook-url">${process.env.LINE_WEBHOOK_URL || `${process.env.BASE_URL || 'http://localhost:' + config.port}${config.line.webhookPath}`}</div>
-        <p>💡 このURLをLINE DeveloperコンソールのWebhook URLに設定してください。</p>
-        <div>
-          <a href="https://developers.line.biz/console/" target="_blank" class="line-link">LINE Developerコンソールを開く</a>
-          <a href="${process.env.DISCORD_WEBHOOK_URL || '#'}" target="_blank" class="discord-link">Discord Webhookを確認</a>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
-});
+// ファイル（PDF、音声、動画など）をダウンロードする関数
+async function downloadFile(url, filePath, headers = {}) {
+  try {
+    // ディレクトリが存在しない場合は作成
+    const dirname = path.dirname(filePath);
+    if (!fs.existsSync(dirname)) {
+      fs.mkdirSync(dirname, { recursive: true });
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${config.line.channelAccessToken}`,
+        ...headers
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`ファイルのダウンロードに失敗しました: ${response.status} ${response.statusText}`);
+    }
+
+    const fileStream = fs.createWriteStream(filePath);
+    await finished(Readable.fromWeb(response.body).pipe(fileStream));
+    console.log(`✅ ファイルを保存しました: ${filePath}`);
+    return true;
+  } catch (error) {
+    console.error('❌ ファイルのダウンロード中にエラーが発生しました:', error);
+    return false;
+  }
+}
+
+// ファイルメッセージ処理関数
+async function handleFileMessage(event, sourceType, userId, groupId, roomId, userProfile, req) {
+  try {
+    console.log('📁 ファイルメッセージを処理中...');
+    const messageId = event.message.id;
+    
+    // ファイル名を取得（可能な場合）
+    let fileName = `file_${messageId}`;
+    if (event.message.fileName) {
+      fileName = getSafeFileName(event.message.fileName);
+    } else {
+      // ファイル拡張子を推測
+      const fileType = event.message.type || 'bin';
+      fileName = `${fileName}.${fileType}`;
+    }
+    
+    // ファイルを保存するパス
+    const filePath = path.join('public', 'files', fileName);
+    
+    // ファイルをダウンロード
+    const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+    const downloaded = await downloadFile(fileUrl, filePath);
+    
+    if (!downloaded) {
+      // ダウンロードに失敗した場合、テキストのみ送信
+      return sendToDiscord({
+        content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
+        username: userProfile.displayName,
+        avatar_url: userProfile.pictureUrl || undefined
+      });
+    }
+    
+    // ダウンロードに成功した場合、ファイルURLを取得
+    const publicUrl = getPublicUrl(req, `/files/${fileName}`);
+    
+    // Discordに送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんがファイルを送信しました:\n${publicUrl}`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  } catch (error) {
+    console.error('❌ ファイルメッセージの処理中にエラーが発生しました:', error);
+    // エラーの場合でもメッセージは送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  }
+}
+
+// 位置情報メッセージ処理関数
+async function handleLocationMessage(event, sourceType, userId, groupId, roomId, userProfile) {
+  try {
+    console.log('🗺️ 位置情報メッセージを処理中...');
+    const location = event.message;
+    
+    // Google Mapsへのリンクを作成
+    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${location.latitude},${location.longitude}`)}`;
+    
+    // Discordに送信
+    return sendToDiscord({
+      embeds: [{
+        title: location.title || '位置情報',
+        description: location.address || '住所情報なし',
+        fields: [
+          { name: '緯度', value: `${location.latitude}`, inline: true },
+          { name: '経度', value: `${location.longitude}`, inline: true },
+          { name: 'Google Maps', value: `[地図を開く](${googleMapsUrl})` }
+        ],
+        color: 0x3498db // 青色
+      }],
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  } catch (error) {
+    console.error('❌ 位置情報メッセージの処理中にエラーが発生しました:', error);
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが位置情報を送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  }
+}
+
+// 連絡先情報メッセージ処理関数
+async function handleContactMessage(event, sourceType, userId, groupId, roomId, userProfile) {
+  try {
+    console.log('👤 連絡先情報メッセージを処理中...');
+    
+    // LINEはContact共有のAPIが限定的なため、テキストで情報を送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが連絡先情報を共有しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  } catch (error) {
+    console.error('❌ 連絡先情報メッセージの処理中にエラーが発生しました:', error);
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが連絡先情報を共有しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  }
+}
+
+// オーディオメッセージ処理関数
+async function handleAudioMessage(event, sourceType, userId, groupId, roomId, userProfile, req) {
+  try {
+    console.log('🔊 オーディオメッセージを処理中...');
+    const messageId = event.message.id;
+    
+    // ファイル名を生成
+    const fileName = `audio_${messageId}.m4a`;
+    const filePath = path.join('public', 'files', fileName);
+    
+    // ファイルをダウンロード
+    const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+    const downloaded = await downloadFile(fileUrl, filePath);
+    
+    if (!downloaded) {
+      // ダウンロードに失敗した場合、テキストのみ送信
+      return sendToDiscord({
+        content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
+        username: userProfile.displayName,
+        avatar_url: userProfile.pictureUrl || undefined
+      });
+    }
+    
+    // ダウンロードに成功した場合、ファイルURLを取得
+    const publicUrl = getPublicUrl(req, `/files/${fileName}`);
+    
+    // Discordに送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが音声メッセージを送信しました:\n${publicUrl}`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  } catch (error) {
+    console.error('❌ 音声メッセージの処理中にエラーが発生しました:', error);
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  }
+}
+
+// 動画メッセージ処理関数
+async function handleVideoMessage(event, sourceType, userId, groupId, roomId, userProfile, req) {
+  try {
+    console.log('🎬 動画メッセージを処理中...');
+    const messageId = event.message.id;
+    
+    // ファイル名を生成
+    const fileName = `video_${messageId}.mp4`;
+    const filePath = path.join('public', 'files', fileName);
+    
+    // ファイルをダウンロード
+    const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+    const downloaded = await downloadFile(fileUrl, filePath);
+    
+    if (!downloaded) {
+      // ダウンロードに失敗した場合、テキストのみ送信
+      return sendToDiscord({
+        content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
+        username: userProfile.displayName,
+        avatar_url: userProfile.pictureUrl || undefined
+      });
+    }
+    
+    // ダウンロードに成功した場合、ファイルURLを取得
+    const publicUrl = getPublicUrl(req, `/files/${fileName}`);
+    
+    // Discordに送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが動画を送信しました:\n${publicUrl}`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  } catch (error) {
+    console.error('❌ 動画メッセージの処理中にエラーが発生しました:', error);
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl || undefined
+    });
+  }
+}
+
+// スタンプメッセージを処理
+async function handleStickerMessage(event, sourceType, userId, groupId, roomId, userProfile) {
+  console.log(`📱 ${sourceType}からスタンプを受信:`, event.message);
+  
+  try {
+    // LINE公式スタンプのURLを構築
+    const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${event.message.stickerId}/android/sticker.png`;
+    
+    const result = await sendToDiscord({
+      text: "【スタンプが送信されました】",
+      username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
+      timestamp: event.timestamp,
+      groupName: sourceType === 'user' 
+        ? 'LINE個人チャット' 
+        : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
+      senderName: userProfile?.displayName || null,
+      senderIconUrl: userProfile?.pictureUrl || null,
+      imageUrl: stickerUrl
+    });
+    
+    console.log(`Discord送信結果(スタンプ): ${result ? '成功' : '失敗'}`);
+  } catch (err) {
+    console.error('Discord送信中にエラーが発生:', err);
+  }
+}
 
 // LINE Webhook署名検証関数
 function validateLineSignature(rawBody, signature) {
@@ -709,159 +932,106 @@ async function getLINEUserProfile(userId, groupId = null) {
   }
 }
 
-// スタンプメッセージを処理
-async function handleStickerMessage(event, sourceType, userId, groupId, roomId, userProfile) {
-  console.log(`📱 ${sourceType}からスタンプを受信:`, event.message);
-  
-  try {
-    // LINE公式スタンプのURLを構築
-    const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${event.message.stickerId}/android/sticker.png`;
-    
-    const result = await sendToDiscord({
-      text: "【スタンプが送信されました】",
-      username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
-      timestamp: event.timestamp,
-      groupName: sourceType === 'user' 
-        ? 'LINE個人チャット' 
-        : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
-      senderName: userProfile?.displayName || null,
-      senderIconUrl: userProfile?.pictureUrl || null,
-      imageUrl: stickerUrl
-    });
-    
-    console.log(`Discord送信結果(スタンプ): ${result ? '成功' : '失敗'}`);
-  } catch (err) {
-    console.error('Discord送信中にエラーが発生:', err);
-  }
-}
-
-// LINE Webhook用のエンドポイント（POSTリクエスト）
+// LINE Webhook エンドポイント
 app.post(config.line.webhookPath, async (req, res) => {
-  console.log('\n\n📥 LINEからのWebhookリクエスト受信');
-  console.log('📝 リクエストヘッダー:', JSON.stringify(req.headers, null, 2));
-  
-  // リクエストボディの内容をログに出力
-  let requestBody = '';
   try {
-    requestBody = JSON.stringify(req.body, null, 2);
-    console.log('📝 リクエストボディ:', requestBody);
-  } catch (e) {
-    console.error('⚠️ リクエストボディの解析に失敗:', e);
-    console.log('📝 リクエストボディ (raw):', req.rawBody?.toString() || '空');
-  }
-  
-  try {
-    // LINE Platformからの応答確認用
-    if (!req.body || !req.body.events || req.body.events.length === 0) {
-      console.log('ℹ️ イベントなし（接続確認）');
-      return res.status(200).end();
-    }
-    
-    // 署名検証
+    // シグネチャの検証
     const signature = req.headers['x-line-signature'];
-    if (signature) {
-      const isValid = validateLineSignature(req.rawBody, signature);
-      if (!isValid) {
-        console.warn('⚠️ 署名検証失敗！');
-        // 本番環境ではここで処理を中止するべき
-        // return res.status(403).end();  // 開発中はコメントアウト
-      }
-    } else {
-      console.warn('⚠️ x-line-signature ヘッダーがありません');
+    if (!validateLineSignature(req.rawBody, signature)) {
+      console.warn('⚠️ 不正なシグネチャ:', signature);
+      return res.status(401).send('Invalid signature');
     }
     
-    // 受信したイベントごとに処理
-    for (const event of req.body.events) {
-      console.log(`ℹ️ イベントタイプ: ${event.type}`);
+    const events = req.body.events;
+    if (!events || events.length === 0) {
+      return res.status(200).send('No events');
+    }
+    
+    // イベントを処理
+    for (const event of events) {
+      console.log('📨 受信イベント:', JSON.stringify(event));
       
-      // フォローイベント処理
-      if (event.type === 'follow') {
-        const userId = event.source.userId;
-        console.log(`🎉 ユーザー ${userId} がボットをフォローしました`);
-        
-        // フォロー時の応答メッセージ（任意）
-        await sendLineMessage(userId, [
-          {
-            type: 'text',
-            text: 'フォローありがとうございます！このボットはLINEとDiscordを連携します。グループに招待することでメッセージをDiscordに転送できます。'
-          }
-        ]);
-      }
+      // イベントのソース情報を取得
+      const sourceType = event.source.type;
+      const userId = event.source.userId;
+      const groupId = sourceType === 'group' ? event.source.groupId : null;
+      const roomId = sourceType === 'room' ? event.source.roomId : null;
       
-      // メッセージイベントのみ処理
+      // ユーザープロファイルを取得
+      const userProfile = await getLINEUserProfile(userId, groupId || roomId);
+      
       if (event.type === 'message') {
-        const sourceType = event.source.type; // 'user', 'group', 'room'
-        const userId = event.source.userId;
-        const groupId = event.source.groupId;
-        const roomId = event.source.roomId;
+        console.log(`📝 メッセージタイプ: ${event.message.type}`);
         
-        console.log(`📩 メッセージイベント:
-        - タイプ: ${sourceType}
-        - ユーザーID: ${userId || '不明'}
-        - グループID: ${groupId || 'なし'}
-        - ルームID: ${roomId || 'なし'}`);
-        
-        // グループIDを保存（必要な場合）
-        if (groupId && (!process.env.LINE_GROUP_ID || process.env.LINE_GROUP_ID === '未設定')) {
-          try {
-            const envContent = fs.readFileSync('.env', 'utf8');
-            const updatedEnv = envContent.replace(/LINE_GROUP_ID=.*$/m, `LINE_GROUP_ID=${groupId}`);
-            fs.writeFileSync('.env', updatedEnv);
-            console.log(`📝 グループID ${groupId} を.envファイルに保存しました`);
-          } catch (err) {
-            console.warn('⚠️ .envファイルの更新に失敗しました:', err.message);
-          }
-        }
-        
-        // ユーザープロフィール情報を取得（送信者名とアイコン）
-        let userProfile = null;
-        if (userId) {
-          userProfile = await getLINEUserProfile(userId, groupId);
-        }
-        
-        // テキストメッセージを処理
-        if (event.message.type === 'text') {
-          const messageText = event.message.text;
-          console.log(`📱 ${sourceType}から受信したテキスト: ${messageText}`);
-          
-          // Discordに転送
-          try {
-            const result = await sendToDiscord({
-              text: messageText,
-              username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
-              timestamp: event.timestamp,
-              groupName: sourceType === 'user' 
-                ? 'LINE個人チャット' 
-                : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
-              senderName: userProfile?.displayName || null,
-              senderIconUrl: userProfile?.pictureUrl || null
+        switch (event.message.type) {
+          case 'text':
+            await sendToDiscord({
+              content: event.message.text,
+              username: userProfile.displayName,
+              avatar_url: userProfile.pictureUrl || undefined
             });
+            break;
             
-            console.log(`Discord送信結果: ${result ? '成功' : '失敗'}`);
-          } catch (err) {
-            console.error('Discord送信中にエラーが発生:', err);
-          }
+          case 'image':
+            await handleImageMessage(event, sourceType, userId, groupId, roomId, userProfile, req);
+            break;
+            
+          case 'sticker':
+            await handleStickerMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            break;
+            
+          case 'file':
+            await handleFileMessage(event, sourceType, userId, groupId, roomId, userProfile, req);
+            break;
+            
+          case 'location':
+            await handleLocationMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            break;
+            
+          case 'audio':
+            await handleAudioMessage(event, sourceType, userId, groupId, roomId, userProfile, req);
+            break;
+            
+          case 'video':
+            await handleVideoMessage(event, sourceType, userId, groupId, roomId, userProfile, req);
+            break;
+            
+          case 'contact':
+            await handleContactMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            break;
+            
+          default:
+            console.log(`🤷‍♂️ 未対応のメッセージタイプ: ${event.message.type}`);
+            await sendToDiscord({
+              content: `${userProfile.displayName}さんが「${event.message.type}」タイプのメッセージを送信しました（LINEアプリで確認してください）`,
+              username: userProfile.displayName,
+              avatar_url: userProfile.pictureUrl || undefined
+            });
         }
-        // 画像メッセージを処理
-        else if (event.message.type === 'image') {
-          await handleImageMessage(event, sourceType, userId, groupId, roomId, userProfile, req);
-        } 
-        // スタンプ（スタンプ）メッセージを処理
-        else if (event.message.type === 'sticker') {
-          await handleStickerMessage(event, sourceType, userId, groupId, roomId, userProfile);
-        } else {
-          // テキスト以外のメッセージタイプ
-          console.log(`ℹ️ サポート外のメッセージタイプ: ${event.message.type}`);
-        }
+      } else if (event.type === 'follow') {
+        // 友達追加イベント
+        console.log('👋 友達追加イベント', event);
+        await sendToDiscord({
+          content: `${userProfile.displayName}さんがLINE Botを友達追加しました！`,
+          username: "LINE通知",
+          avatar_url: userProfile.pictureUrl || undefined
+        });
+      } else if (event.type === 'join') {
+        // グループ参加イベント
+        console.log('🎉 グループ参加イベント', event);
+        await sendToDiscord({
+          content: "LINE Botがグループに参加しました！このグループのメッセージがDiscordに転送されます。",
+          username: "LINE通知"
+        });
+      } else {
+        console.log(`⏭️ メッセージ以外のイベント: ${event.type}`);
       }
     }
     
-    // LINE Platformへの応答
-    res.status(200).end();
+    res.status(200).send('OK');
   } catch (error) {
-    console.error('❌ Webhookエラー:', error);
-    // エラーが発生しても200を返す (LINE Platformの要件)
-    res.status(200).end();
+    console.error('❌ Webhook処理中にエラーが発生しました:', error);
+    res.status(500).send('Internal Server Error');
   }
 });
 
