@@ -262,8 +262,11 @@ app.use(express.json({
   }
 }));
 
-// 静的ファイルの提供
-app.use(express.static('public'));
+// 静的ファイルの提供（注意: パスはプロジェクトのルートからの相対パス）
+app.use(express.static(path.join(__dirname, 'public')));
+// 念のため、images, filesディレクトリも明示的にマッピング
+app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
+app.use('/files', express.static(path.join(__dirname, 'public', 'files')));
 
 // 必要なディレクトリを作成
 const directories = [
@@ -423,14 +426,6 @@ async function downloadFile(url, filePath, headers = {}) {
   }
 }
 
-// 安全なファイル名を生成
-function getSafeFileName(original) {
-  // ランダムな文字列を生成して一意なファイル名にする
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1000000);
-  return `${timestamp}_${random}.jpg`;
-}
-
 // 現在のURL構築
 function getPublicUrl(req, relativePath) {
   // 明示的に設定されたBASE_URLがあればそれを使用
@@ -453,23 +448,35 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
   console.log(`📸 ${sourceType}から画像を受信: メッセージID ${event.message.id}`);
   
   try {
-    // 一意のファイル名を生成
-    const imageFileName = getSafeFileName(event.message.id);
-    const imagePath = path.join(imageDir, imageFileName);
+    // タイムスタンプを使用した一意のファイル名を生成
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    const imageFileName = `img_${timestamp}_${random}.jpg`;
     
+    // 画像をpublic/imagesディレクトリに保存
+    const imagePath = path.join(imageDir, imageFileName);
     console.log('📂 画像保存先パス:', imagePath);
     
-    // LINE APIから画像をダウンロード（認証ヘッダー付き）
+    // LINE APIから画像をダウンロード
     const fileUrl = `https://api-data.line.me/v2/bot/message/${event.message.id}/content`;
-    const downloaded = await downloadFile(fileUrl, imagePath);
+    const success = await downloadFile(fileUrl, imagePath);
     
-    if (!downloaded) {
+    if (!success) {
       throw new Error('画像のダウンロードに失敗しました');
     }
     
     // 画像の公開URL
+    // 注意: 相対パスは /images/ から始まる必要がある
     const imageUrl = getPublicUrl(req, `/images/${imageFileName}`);
     console.log('🔗 画像の公開URL:', imageUrl);
+    
+    // 画像にアクセスできるか確認（オプション）
+    try {
+      const testResponse = await fetch(imageUrl, { method: 'HEAD' });
+      console.log(`🔍 画像URLテスト: HTTP ${testResponse.status}`);
+    } catch (err) {
+      console.log('⚠️ 画像URLのテストに失敗:', err.message);
+    }
     
     // Discordに送信
     return sendToDiscord({
@@ -487,7 +494,7 @@ async function handleImageMessage(event, sourceType, userId, groupId, roomId, us
     
     // エラー時は通常のテキストメッセージだけ送信
     await sendToDiscord({
-      content: `${userProfile.displayName}さんが画像を送信しました（LINEアプリで確認してください）`,
+      content: `${userProfile.displayName}さんが画像を送信しました（LINEアプリで確認してください）\nエラー: ${err.message}`,
       username: userProfile.displayName,
       avatar_url: userProfile.pictureUrl
     });
@@ -500,10 +507,16 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     console.log('📁 ファイルメッセージを処理中...');
     const messageId = event.message.id;
     
+    // 一意のファイル名を生成
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    
     // ファイル名を取得（可能な場合）
-    let fileName = `file_${messageId}`;
+    let fileName = `file_${timestamp}_${random}`;
     if (event.message.fileName) {
-      fileName = getSafeFileName(event.message.fileName);
+      // 元のファイル名から拡張子を取得
+      const originalExt = path.extname(event.message.fileName);
+      fileName = `file_${timestamp}_${random}${originalExt || '.bin'}`;
     } else {
       // ファイル拡張子を推測
       const fileType = event.message.type || 'bin';
@@ -511,7 +524,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     }
     
     // ファイルを保存するパス
-    const filePath = path.join('public', 'files', fileName);
+    const filePath = path.join(filesDir, fileName);
     
     // ファイルをダウンロード
     const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -522,7 +535,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
       return sendToDiscord({
         content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl || undefined
+        avatar_url: userProfile.pictureUrl
       });
     }
     
@@ -533,7 +546,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     return sendToDiscord({
       content: `${userProfile.displayName}さんがファイルを送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   } catch (error) {
     console.error('❌ ファイルメッセージの処理中にエラーが発生しました:', error);
@@ -541,7 +554,7 @@ async function handleFileMessage(event, sourceType, userId, groupId, roomId, use
     return sendToDiscord({
       content: `${userProfile.displayName}さんがファイルを送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   }
 }
@@ -628,9 +641,13 @@ async function handleAudioMessage(event, sourceType, userId, groupId, roomId, us
     console.log('🔊 オーディオメッセージを処理中...');
     const messageId = event.message.id;
     
-    // ファイル名を生成
-    const fileName = `audio_${messageId}.m4a`;
-    const filePath = path.join('public', 'files', fileName);
+    // タイムスタンプを使用した一意のファイル名を生成
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    const fileName = `audio_${timestamp}_${random}.m4a`;
+    
+    // ファイルを保存するパス
+    const filePath = path.join(filesDir, fileName);
     
     // ファイルをダウンロード
     const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -641,7 +658,7 @@ async function handleAudioMessage(event, sourceType, userId, groupId, roomId, us
       return sendToDiscord({
         content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl || undefined
+        avatar_url: userProfile.pictureUrl
       });
     }
     
@@ -652,14 +669,14 @@ async function handleAudioMessage(event, sourceType, userId, groupId, roomId, us
     return sendToDiscord({
       content: `${userProfile.displayName}さんが音声メッセージを送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   } catch (error) {
     console.error('❌ 音声メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが音声メッセージを送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   }
 }
@@ -670,9 +687,13 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
     console.log('🎬 動画メッセージを処理中...');
     const messageId = event.message.id;
     
-    // ファイル名を生成
-    const fileName = `video_${messageId}.mp4`;
-    const filePath = path.join('public', 'files', fileName);
+    // タイムスタンプを使用した一意のファイル名を生成
+    const timestamp = Date.now();
+    const random = Math.floor(Math.random() * 1000000);
+    const fileName = `video_${timestamp}_${random}.mp4`;
+    
+    // ファイルを保存するパス
+    const filePath = path.join(filesDir, fileName);
     
     // ファイルをダウンロード
     const fileUrl = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
@@ -683,7 +704,7 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
       return sendToDiscord({
         content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
         username: userProfile.displayName,
-        avatar_url: userProfile.pictureUrl || undefined
+        avatar_url: userProfile.pictureUrl
       });
     }
     
@@ -694,14 +715,14 @@ async function handleVideoMessage(event, sourceType, userId, groupId, roomId, us
     return sendToDiscord({
       content: `${userProfile.displayName}さんが動画を送信しました:\n${publicUrl}`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   } catch (error) {
     console.error('❌ 動画メッセージの処理中にエラーが発生しました:', error);
     return sendToDiscord({
       content: `${userProfile.displayName}さんが動画を送信しました（LINEアプリで確認してください）`,
       username: userProfile.displayName,
-      avatar_url: userProfile.pictureUrl || undefined
+      avatar_url: userProfile.pictureUrl
     });
   }
 }
@@ -714,21 +735,26 @@ async function handleStickerMessage(event, sourceType, userId, groupId, roomId, 
     // LINE公式スタンプのURLを構築
     const stickerUrl = `https://stickershop.line-scdn.net/stickershop/v1/sticker/${event.message.stickerId}/android/sticker.png`;
     
-    const result = await sendToDiscord({
-      text: "【スタンプが送信されました】",
-      username: `LINE ${userProfile?.displayName || 'ユーザー'} (${userId ? userId.substr(-4) : '不明'})`,
-      timestamp: event.timestamp,
-      groupName: sourceType === 'user' 
-        ? 'LINE個人チャット' 
-        : `LINE${sourceType === 'group' ? 'グループ' : 'ルーム'} (${(groupId || roomId || '').substr(-4)})`,
-      senderName: userProfile?.displayName || null,
-      senderIconUrl: userProfile?.pictureUrl || null,
-      imageUrl: stickerUrl
+    // Discordに送信
+    return sendToDiscord({
+      content: `${userProfile.displayName}さんがスタンプを送信しました:`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl,
+      embeds: [{
+        image: {
+          url: stickerUrl
+        }
+      }]
     });
-    
-    console.log(`Discord送信結果(スタンプ): ${result ? '成功' : '失敗'}`);
   } catch (err) {
-    console.error('Discord送信中にエラーが発生:', err);
+    console.error('❌ スタンプ処理中にエラーが発生:', err);
+    
+    // エラー時は通常のテキストメッセージだけ送信
+    await sendToDiscord({
+      content: `${userProfile.displayName}さんがスタンプを送信しました（LINEアプリで確認してください）`,
+      username: userProfile.displayName,
+      avatar_url: userProfile.pictureUrl
+    });
   }
 }
 
@@ -932,7 +958,16 @@ app.post(config.line.webhookPath, async (req, res) => {
       const roomId = sourceType === 'room' ? event.source.roomId : null;
       
       // ユーザープロファイルを取得
-      const userProfile = await getLINEUserProfile(userId, groupId || roomId);
+      let userProfile = await getLINEUserProfile(userId, groupId || roomId);
+      
+      // プロファイル取得に失敗した場合のデフォルト値
+      if (!userProfile) {
+        userProfile = {
+          displayName: userId ? `LINEユーザー ${userId.substr(-4)}` : 'LINEユーザー',
+          pictureUrl: 'https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png'
+        };
+        console.log('⚠️ ユーザープロファイル取得に失敗したため、デフォルト値を使用します');
+      }
       
       if (event.type === 'message') {
         console.log(`📝 メッセージタイプ: ${event.message.type}`);
@@ -942,7 +977,7 @@ app.post(config.line.webhookPath, async (req, res) => {
             await sendToDiscord({
               content: event.message.text,
               username: userProfile.displayName,
-              avatar_url: userProfile.pictureUrl || undefined
+              avatar_url: userProfile.pictureUrl
             });
             break;
             
@@ -979,7 +1014,7 @@ app.post(config.line.webhookPath, async (req, res) => {
             await sendToDiscord({
               content: `${userProfile.displayName}さんが「${event.message.type}」タイプのメッセージを送信しました（LINEアプリで確認してください）`,
               username: userProfile.displayName,
-              avatar_url: userProfile.pictureUrl || undefined
+              avatar_url: userProfile.pictureUrl
             });
         }
       } else if (event.type === 'follow') {
@@ -988,14 +1023,15 @@ app.post(config.line.webhookPath, async (req, res) => {
         await sendToDiscord({
           content: `${userProfile.displayName}さんがLINE Botを友達追加しました！`,
           username: "LINE通知",
-          avatar_url: userProfile.pictureUrl || undefined
+          avatar_url: userProfile.pictureUrl
         });
       } else if (event.type === 'join') {
         // グループ参加イベント
         console.log('🎉 グループ参加イベント', event);
         await sendToDiscord({
           content: "LINE Botがグループに参加しました！このグループのメッセージがDiscordに転送されます。",
-          username: "LINE通知"
+          username: "LINE通知",
+          avatar_url: "https://storage.googleapis.com/gweb-uniblog-publish-prod/images/logo_line_blogheader.max-1300x1300.png"
         });
       } else {
         console.log(`⏭️ メッセージ以外のイベント: ${event.type}`);
