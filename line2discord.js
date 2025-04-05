@@ -1122,7 +1122,13 @@ app.post(config.line.webhookPath, async (req, res) => {
         
         switch (event.message.type) {
           case 'text':
-            await handleTextMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            // テキスト中に絵文字が含まれているかチェック
+            if (event.message.text.includes('$') && event.message.text.match(/\$[a-zA-Z0-9_]+\$/g)) {
+              console.log('🎭 テキストに絵文字が含まれています');
+              await handleEmojiMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            } else {
+              await handleTextMessage(event, sourceType, userId, groupId, roomId, userProfile);
+            }
             break;
             
           case 'image':
@@ -1267,6 +1273,63 @@ async function handleTextMessage(event, sourceType, userId, groupId, roomId, use
   // Discordにテキストメッセージを送信
   await sendToDiscord({
     content: event.message.text,
+    ...messageConfig
+  });
+}
+
+// 絵文字メッセージを処理する関数
+async function handleEmojiMessage(event, sourceType, userId, groupId, roomId, userProfile) {
+  console.log(`🎭 ${sourceType}から絵文字を含むテキストを受信: ${event.message.text}`);
+  
+  // 絵文字コードを抽出（$emoji$形式）
+  const emojiCodes = event.message.text.match(/\$[a-zA-Z0-9_]+\$/g) || [];
+  console.log('🔍 抽出した絵文字コード:', emojiCodes);
+  
+  // メッセージ共通設定（ユーザー名とアイコン）
+  const messageConfig = {
+    username: userProfile.displayName,
+    avatar_url: userProfile.pictureUrl || 'https://cdn.discordapp.com/embed/avatars/0.png'
+  };
+  
+  // オリジナルのテキストメッセージをコピー
+  let messageContent = event.message.text;
+  
+  // LINE絵文字をDiscord絵文字に置換
+  // 一般的な笑顔、悲しい顔、怒りなどの絵文字をマッピング
+  const emojiMapping = {
+    '$smile$': ':smile:',
+    '$happy$': ':grin:',
+    '$laugh$': ':laughing:',
+    '$sad$': ':frowning:',
+    '$crying$': ':cry:',
+    '$angry$': ':rage:',
+    '$love$': ':heart_eyes:',
+    '$heart$': ':heart:',
+    '$face$': ':face_with_monocle:'
+  };
+  
+  // 絵文字の説明とアイコンを作成
+  let emojiDescriptions = '';
+  
+  if (emojiCodes.length > 0) {
+    emojiDescriptions += "\n\n";
+    emojiDescriptions += "**LINEスタンプ/絵文字が使用されています:**\n";
+    
+    // 各絵文字コードをDiscord用に変換
+    emojiCodes.forEach((code, index) => {
+      const discordEmoji = emojiMapping[code] || code;
+      emojiDescriptions += `${index + 1}. ${code} ${discordEmoji}\n`;
+      
+      // テキスト内の絵文字コードを置換（可能な場合）
+      if (emojiMapping[code]) {
+        messageContent = messageContent.replace(code, emojiMapping[code]);
+      }
+    });
+  }
+  
+  // テキストと絵文字の情報をDiscordに送信
+  await sendToDiscord({
+    content: messageContent + emojiDescriptions,
     ...messageConfig
   });
 }
